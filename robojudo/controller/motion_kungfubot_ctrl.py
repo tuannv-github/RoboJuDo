@@ -22,6 +22,7 @@ class MotionKungfuBotCtrl(MotionCtrl):
     cfg_ctrl: MotionKungfuBotCtrlCfg
 
     def __init__(self, cfg_ctrl, env, device="cpu"):
+        self._pack_motions(cfg_ctrl)
         super().__init__(cfg_ctrl=cfg_ctrl, env=env, device=device)
 
         self.future_max_steps = self.cfg_ctrl.future_max_steps
@@ -33,12 +34,87 @@ class MotionKungfuBotCtrl(MotionCtrl):
         self.dt = 0.02
         self.play_speed_ratio = 1.0
         self.speed_target = 1.0
+        self._motion_done_sent = False
+        self._skill_running = False
+        if not self.cfg_ctrl.autoplay:
+            self.play_speed_ratio = 0.0
 
         self._get_future_motion_targets()
+
+    def _pack_motions(self, cfg_ctrl):
+        """Merge the listed clips into one library so a skill key can select one."""
+        names = list(getattr(cfg_ctrl, "motion_names", []) or [])
+        if len(names) < 2:
+            return
+        import joblib
+
+        from robojudo.config import ASSETS_DIR
+
+        merged = {}
+        for name in names:
+            path = ASSETS_DIR / f"motions/{cfg_ctrl.robot}/phc/{name}.pkl"
+            clip = joblib.load(path)
+            merged[name] = next(iter(clip.values()))
+        pack_path = ASSETS_DIR / f"motions/{cfg_ctrl.robot}/phc/kungfubot/_skill_pack.pkl"
+        joblib.dump(merged, pack_path)
+        cfg_ctrl.motion_name = "kungfubot/_skill_pack"
+
+    def _take_motion_select(self, commands: list[str]) -> bool:
+        selected = None
+        for command in commands:
+            if command.startswith("[MOTION_SELECT],"):
+                selected = int(command.split(",")[1])
+        if selected is None:
+            return False
+        self._motion_done_sent = False
+        self._skill_running = False
+        self.play_speed_ratio = 0.0
+        self.load_motion(selected, block=True)
+        self.reset()
+        self._get_future_motion_targets()
+        return True
 
     def post_step_callback(self, commands: list[str] | None = None):
+        commands = list(commands or [])
+        if self._take_motion_select(commands):
+            return
+        if not self.cfg_ctrl.autoplay:
+            self._post_step_while_paused(commands)
+            return
         self._get_future_motion_targets()
         super().post_step_callback(commands)
+
+    def _post_step_while_paused(self, commands: list[str]):
+        """Hold the clip until the kungfu policy is actually in control, then hand back at the end."""
+        if "[POLICY_MIMIC]" in commands or "[MOTION_RESET]" in commands:
+            self._motion_done_sent = False
+            self._skill_running = False
+            self.play_speed_ratio = 0.0
+            self.reset()
+            self._get_future_motion_targets()
+            return
+
+        if "[POLICY_LOCO]" in commands:
+            self.play_speed_ratio = 0.0
+            self._skill_running = False
+
+        if "[MOTION_STEP]" in commands and not self._motion_done_sent:
+            if not self._skill_running:
+                self.reset()
+                self.play_speed_ratio = 1.0
+                self._skill_running = True
+            if self.motion_time >= float(self.motion_length) - 1e-3:
+                self.play_speed_ratio = 0.0
+                self._skill_running = False
+                self._motion_done_sent = True
+                self.gui_commands.put("[POLICY_LOCO]")
+                self._get_future_motion_targets()
+                return
+            self._get_future_motion_targets()
+            MotionCtrl.post_step_callback(self, commands)
+            return
+
+        self._get_future_motion_targets()
 
     def _get_future_motion_targets(self):
         self.tar_obs_steps = torch.linspace(

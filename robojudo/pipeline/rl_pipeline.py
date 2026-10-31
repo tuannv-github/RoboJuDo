@@ -126,6 +126,10 @@ class RlPipeline(Pipeline):
                     if hasattr(self.env, "reborn"):
                         logger.warning("Simulation Env reborn!")
                         self.env.reborn()  # pyright: ignore[reportAttributeAccessIssue]
+                case "[SHOW_SKILLS]":
+                    from robojudo.pipeline.skill_table import print_skill_table
+
+                    print_skill_table(self.ctrl_manager, [self.policy], mimic=False)
 
         self.ctrl_manager.post_step_callback(ctrl_data)
 

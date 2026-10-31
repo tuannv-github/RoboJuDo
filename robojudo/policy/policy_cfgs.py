@@ -387,6 +387,12 @@ class KungfuBotGeneralPolicyCfg(PolicyCfg):
     compatibility_old_version: bool = False
     """For old version of kungfubot general policy (before 2025-11-13 bugfix #68)"""
 
+    motion_id: int | None = None
+    """Clip index in the kungfu motion pack. None keeps whatever clip is already loaded."""
+
+    skill_title: str = ""
+    """Name shown in the startup skill table."""
+
 
 class TwistPolicyCfg(PolicyCfg):
     class ObsScalesCfg(Config):

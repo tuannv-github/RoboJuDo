@@ -125,6 +125,39 @@ class Policy(ABC):
             tqdm.write(f"keyboard cmd {list(rounded)} held={sorted(active)}")
         return command
 
+    def _move_command(self, ctrl_data, commands_map, on_press: Callable[[str], None] | None = None) -> np.ndarray:
+        """Velocity command from the gamepad or the keyboard.
+
+        ``commands_map`` is ``[forward, lateral, yaw]``, each ``[neg, zero, pos]``.
+        A stick away from center wins. Otherwise the keyboard is used. With neither
+        touched, the result is the zero entry of each axis.
+        """
+        keyboard = ctrl_data.get("KeyboardCtrl")
+        kb_cmd = None
+        if keyboard is not None:
+            kb_cmd = self._keyboard_command(keyboard["keyboard_event"], commands_map, on_press=on_press)
+
+        for key in ("JoystickCtrl", "UnitreeCtrl"):
+            joystick = ctrl_data.get(key)
+            if joystick is None:
+                continue
+            axes = joystick["axes"]
+            ly, lx, rx = axes["LeftY"], axes["LeftX"], axes["RightX"]
+            if max(abs(ly), abs(lx), abs(rx)) > 0.05:
+                return np.array(
+                    [
+                        float(command_remap(ly, commands_map[0])),
+                        float(command_remap(lx, commands_map[1])),
+                        float(command_remap(rx, commands_map[2])),
+                    ],
+                    dtype=np.float32,
+                )
+            break
+
+        if kb_cmd is not None:
+            return kb_cmd
+        return np.array([axis[1] for axis in commands_map[:3]], dtype=np.float32)
+
     def _init_history(self, default_history: np.ndarray | torch.Tensor | list):
         logger.debug(f"Initializing history buffer as {self.history_length} x {len(default_history)}")
         self.history_buf = deque(maxlen=self.history_length)

@@ -18,6 +18,8 @@ class KeyboardCtrlCfg(CtrlCfg):
         "Key.esc": "[SHUTDOWN]",
         # "Key.tab": "[POLICY_TOGGLE]",
         "`": "[SIM_REBORN]",
+        "r": "[SIM_REBORN]",
+        "?": "[SHOW_SKILLS]",
         "<": "[MOTION_FADE_IN]",  # note: with shift
         ">": "[MOTION_FADE_OUT]",  # note: with shift
         "|": "[MOTION_RESET]",  # note: with shift
@@ -117,6 +119,12 @@ class MotionKungfuBotCtrlCfg(MotionCtrlCfg):
 
     anchor_index: int = 0  # root
     key_body_id: list[int]
+
+    autoplay: bool = True
+    """If False, the clip stays paused until the kungfu policy is in control."""
+
+    motion_names: list[str] = []
+    """Ordered clips. When set, they are packed and selected with [MOTION_SELECT],index."""
 
 
 class MotionTwistCtrlCfg(MotionCtrlCfg):

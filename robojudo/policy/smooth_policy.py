@@ -2,7 +2,7 @@ import numpy as np
 
 from robojudo.policy import Policy, policy_registry
 from robojudo.policy.policy_cfgs import SmoothPolicyCfg
-from robojudo.utils.util_func import command_remap, quatToEuler
+from robojudo.utils.util_func import quatToEuler
 
 
 @policy_registry.register
@@ -26,6 +26,7 @@ class SmoothPolicy(Policy):
 
     def reset(self):
         self.timestep: int = 0
+        self._reset_keyboard()
 
     def post_step_callback(self, commands=None):
         self.timestep += 1
@@ -35,19 +36,7 @@ class SmoothPolicy(Policy):
         return phase
 
     def _get_commands(self, ctrl_data):
-        commands = np.array(self.commands_map)[:, 1].copy()  # default commands
-
-        for key in ctrl_data.keys():
-            if key in ["JoystickCtrl", "UnitreeCtrl"]:
-                axes = ctrl_data[key]["axes"]
-                lx, ly, rx, ry = axes["LeftX"], axes["LeftY"], axes["RightX"], axes["RightY"]
-
-                commands[0] = command_remap(ly, self.commands_map[0])
-                commands[1] = command_remap(lx, self.commands_map[1])
-                commands[2] = command_remap(rx, self.commands_map[2])
-                break
-
-        return commands
+        return self._move_command(ctrl_data, self.commands_map)
 
     def get_observation(self, env_data, ctrl_data):
         base_quat = env_data.base_quat
@@ -55,7 +44,6 @@ class SmoothPolicy(Policy):
         rp = rpy[:2]
 
         commands = self._get_commands(ctrl_data)
-        print(f"Commands: {commands}")
         phase = self._get_phase()
 
         sin_pos = [np.sin(2 * np.pi * phase)]

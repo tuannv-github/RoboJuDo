@@ -67,7 +67,7 @@ class G1SmoothPolicyCfg(SmoothPolicyCfg):
 
     cycle_time: float = 0.64
     commands_map: list[list[float]] = [
-        [-1.5, -0.5, 0.5],
-        [0.25, 0.0, -0.25],
-        [0.5, -0.5, -1.5],
+        [-0.5, 0.0, 0.5],
+        [0.5, 0.0, -0.5],
+        [0.5, 0.0, -0.5],
     ]

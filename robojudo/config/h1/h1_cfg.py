@@ -1,4 +1,5 @@
 from robojudo.config import cfg_registry
+from robojudo.config.skill_keys import multi_policy_keys
 from robojudo.controller.ctrl_cfgs import (
     JoystickCtrlCfg,  # noqa: F401
     KeyboardCtrlCfg,  # noqa: F401
@@ -74,6 +75,7 @@ class h1_switch(RlMultiPolicyPipelineCfg):
         KeyboardCtrlCfg(
             triggers_extra={
                 "Key.tab": "[POLICY_TOGGLE]",
+                **multi_policy_keys(2),
             }
         ),
         JoystickCtrlCfg(

@@ -7,6 +7,7 @@ from robojudo.environment import Environment
 from robojudo.pipeline import Pipeline, pipeline_registry
 from robojudo.pipeline.pipeline_cfgs import RlMultiPolicyPipelineCfg
 from robojudo.pipeline.rl_pipeline import PolicyWrapper, RlPipeline
+from robojudo.pipeline.skill_table import print_skill_table
 from robojudo.policy import PolicyCfg
 from robojudo.utils.step_timer import StepTimer
 
@@ -111,6 +112,7 @@ class RlMultiPolicyPipeline(RlPipeline):
 
         self.self_check()
         self.reset()
+        print_skill_table(self.ctrl_manager, self.policy_manager.policies, mimic=False)
 
     def self_check(self):
         self.policy_manager.warmup_policy_indices = set(list(range(self.policy_manager.num_policies)))
@@ -130,6 +132,8 @@ class RlMultiPolicyPipeline(RlPipeline):
                     if hasattr(self.env, "reborn"):
                         logger.warning("Simulation Env reborn!")
                         self.env.reborn()  # pyright: ignore[reportAttributeAccessIssue]
+                case "[SHOW_SKILLS]":
+                    print_skill_table(self.ctrl_manager, self.policy_manager.policies, mimic=False)
                 case "[POLICY_TOGGLE]":
                     logger.warning("Policy toggled!")
                     next_policy_id = (self.policy_manager.current_policy_id + 1) % self.policy_manager.num_policies

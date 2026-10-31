@@ -17,6 +17,7 @@ from robojudo.utils.util_func import (
 logger = logging.getLogger(__name__)
 
 KungfuBotPolicy = AsapPolicy  # backward compatibility
+_SESSION_CACHE: dict[str, ort.InferenceSession] = {}
 
 
 @policy_registry.register
@@ -30,7 +31,11 @@ class KungfuBotGeneralPolicy(Policy):
             raise FileNotFoundError(f"Model file not found at {cfg_policy.policy_file}")
 
         logger.debug(f"Loading policy '{cfg_policy.policy_name}' from {cfg_policy.policy_file}")
-        self.session = ort.InferenceSession(cfg_policy.policy_file)
+        session = _SESSION_CACHE.get(cfg_policy.policy_file)
+        if session is None:
+            session = ort.InferenceSession(cfg_policy.policy_file)
+            _SESSION_CACHE[cfg_policy.policy_file] = session
+        self.session = session
 
         self.input_names = [i.name for i in self.session.get_inputs()]
         self.output_names = [o.name for o in self.session.get_outputs()]
@@ -89,6 +94,12 @@ class KungfuBotGeneralPolicy(Policy):
         )
 
     def get_observation(self, env_data, ctrl_data):  # pyright: ignore[reportIncompatibleMethodOverride] # TODO
+        # Advance the clip only on frames this policy actually builds an observation.
+        # The controller callback runs after this, and only while this policy is active.
+        commands = ctrl_data.get("COMMANDS")
+        if commands is not None and "[MOTION_STEP]" not in commands:
+            commands.append("[MOTION_STEP]")
+
         (
             future_motion_root_height,
             future_motion_roll_pitch,

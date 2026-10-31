@@ -5,7 +5,7 @@ import torch
 
 from robojudo.policy import Policy, policy_registry
 from robojudo.policy.policy_cfgs import AMOPolicyCfg
-from robojudo.utils.util_func import command_remap, quatToEuler
+from robojudo.utils.util_func import quatToEuler
 
 
 @policy_registry.register
@@ -83,6 +83,7 @@ class AMOPolicy(Policy):
 
     def reset(self):
         self.timestep: int = 0
+        self._reset_keyboard()
 
     def post_step_callback(self, commands=None):
         self.timestep += 1
@@ -92,22 +93,23 @@ class AMOPolicy(Policy):
         #     self.arm_action = ref_dof_pos.copy()[-self._n_demo_dof :]
 
         commands = self.cmd.copy()
-        for key in ctrl_data.keys():
-            if key in ["JoystickCtrl", "UnitreeCtrl"]:
-                axes = ctrl_data[key]["axes"]
-                lx, ly, rx, ry = axes["LeftX"], axes["LeftY"], axes["RightX"], axes["RightY"]
+        # Policy command order is [vy, yaw, vx]. The shared helper is [forward, lateral, yaw].
+        vel = self._move_command(
+            ctrl_data,
+            [self.commands_map[0], self.commands_map[2], self.commands_map[1]],
+        )
+        commands[0] = vel[0]
+        commands[2] = vel[1]
+        commands[1] = vel[2]
 
-                commands[0] = command_remap(ly, self.commands_map[0])
-                commands[1] = command_remap(rx, self.commands_map[1])
-                commands[2] = command_remap(lx, self.commands_map[2])
-                # commands[3] = command_remap(ry, self.commands_map[3]) # height
-
-                button_event = ctrl_data[key]["button_event"]
-                for event in button_event:
-                    if event["type"] == "button" and event["name"] == "Y" and event["pressed"]:
-                        commands[7] = not commands[7]
-
-                break
+        for key in ("JoystickCtrl", "UnitreeCtrl"):
+            joystick = ctrl_data.get(key)
+            if joystick is None:
+                continue
+            for event in joystick["button_event"]:
+                if event["type"] == "button" and event["name"] == "Y" and event["pressed"]:
+                    commands[7] = not commands[7]
+            break
         return commands
 
     def get_observation(self, env_data, ctrl_data):

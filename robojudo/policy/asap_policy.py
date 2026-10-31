@@ -341,11 +341,11 @@ class AsapLocoPolicy(Policy):
             case "z":
                 self._kb_smooth[:] = 0.0
                 self._kb_walk = False
-            case "1":
+            case "-":
                 self.base_height_command[0] += 0.05
-            case "2":
-                self.base_height_command[0] -= 0.05
             case "=":
+                self.base_height_command[0] -= 0.05
+            case "x":
                 self._kb_walk = not self._kb_walk
 
     def _apply_keyboard(self, events):
@@ -359,40 +359,51 @@ class AsapLocoPolicy(Policy):
     def _update_commands(self, ctrl_data):
         if (ref_dof_pos := ctrl_data.get("ref_dof_pos", None)) is not None:
             self.ref_upper_dof_pos = ref_dof_pos.copy()[-self.num_upper_dofs :]
-        for key in ctrl_data.keys():
-            if key in ["JoystickCtrl", "UnitreeCtrl"]:
-                axes = ctrl_data[key]["axes"]
-                lx, ly, rx, _ry = axes["LeftX"], axes["LeftY"], axes["RightX"], axes["RightY"]
-
+        stick_active = False
+        for key in ("JoystickCtrl", "UnitreeCtrl"):
+            joystick = ctrl_data.get(key)
+            if joystick is None:
+                continue
+            axes = joystick["axes"]
+            lx, ly, rx, _ry = axes["LeftX"], axes["LeftY"], axes["RightX"], axes["RightY"]
+            stick_active = max(abs(lx), abs(ly), abs(rx)) > 0.05
+            if stick_active:
                 self.lin_vel_command[1] = command_remap(lx, [0.5, 0, -0.5]) * self.stand_command[0]
                 self.lin_vel_command[0] = command_remap(ly, [-0.5, 0, 0.5]) * self.stand_command[0]
                 self.ang_vel_command[0] = command_remap(rx, [1, 0, -1]) * self.stand_command[0]
 
-                button_event = ctrl_data[key]["button_event"]
-                for event in button_event:
-                    if event["type"] == "button" and event["pressed"]:
-                        match event["name"]:
-                            case "Left":
-                                self.stand_command = 1 - self.stand_command
-                                if self.stand_command == 0:
-                                    self.ang_vel_command[0] = 0.0
-                                    self.lin_vel_command[0] = 0.0
-                                    self.lin_vel_command[1] = 0.0
-                            case "Up":
-                                self.base_height_command[0] += 0.05
-                            case "Down":
-                                self.base_height_command[0] -= 0.05
-                break
-            elif key == "KeyboardCtrl":
-                self._apply_keyboard(ctrl_data[key]["keyboard_event"])
-                break
+            for event in joystick["button_event"]:
+                if event["type"] == "button" and event["pressed"]:
+                    match event["name"]:
+                        case "Left":
+                            self.stand_command = 1 - self.stand_command
+                            if self.stand_command == 0:
+                                self.ang_vel_command[0] = 0.0
+                                self.lin_vel_command[0] = 0.0
+                                self.lin_vel_command[1] = 0.0
+                        case "Up":
+                            self.base_height_command[0] += 0.05
+                        case "Down":
+                            self.base_height_command[0] -= 0.05
+            break
+
+        if (keyboard := ctrl_data.get("KeyboardCtrl")) is not None:
+            if stick_active:
+                self._keyboard_command(
+                    keyboard["keyboard_event"], self._kb_commands_map, on_press=self._on_keyboard
+                )
+            else:
+                self._apply_keyboard(keyboard["keyboard_event"])
 
     def debug_viz(self, visualizer: MujocoVisualizer, env_data, ctrl_data, extras):
+        commands = extras.get("commands") if extras is not None else None
+        if commands is None:
+            return
         base_pos = env_data["base_pos"]
         base_quat = env_data["base_quat"]
-        command_x = extras["commands"][0]
-        command_y = extras["commands"][1]
-        command_yaw = extras["commands"][2]
+        command_x = commands[0]
+        command_y = commands[1]
+        command_yaw = commands[2]
 
         visualizer.draw_arrow(
             base_pos,

@@ -1,4 +1,5 @@
 from robojudo.config import cfg_registry
+from robojudo.config.skill_keys import loco_mimic_keys
 from robojudo.controller.ctrl_cfgs import (
     JoystickCtrlCfg,  # noqa: F401
     KeyboardCtrlCfg,  # noqa: F401
@@ -46,23 +47,12 @@ class g1_locomimic_beyondmimic(G1RlLocoMimicPipelineCfg):
         KeyboardCtrlCfg(
             triggers={
                 "i": "[SIM_REBORN]",
+                "r": "[SIM_REBORN]",
+                "?": "[SHOW_SKILLS]",
                 "o": "[SHUTDOWN]",
-                "]": "[POLICY_LOCO]",
-                "[": "[POLICY_MIMIC]",
-                ";": "[POLICY_SWITCH],NEXT",
-                "'": "[POLICY_SWITCH],LAST",
+                **loco_mimic_keys(3),
             }
         ),
-        # JoystickCtrlCfg(
-        #     combination_init_buttons=[],
-        #     triggers={
-        #         "A": "[SHUTDOWN]",
-        #         "Back": "[POLICY_LOCO]",
-        #         "Start": "[POLICY_MIMIC]",
-        #         "RB": "[POLICY_SWITCH],NEXT",
-        #         "LB": "[POLICY_SWITCH],LAST",
-        #     },
-        # ),
     ]
 
     loco_policy: G1AmoPolicyCfg = G1AmoPolicyCfg()
@@ -92,23 +82,12 @@ class g1_locomimic_asap(G1RlLocoMimicPipelineCfg):
         KeyboardCtrlCfg(
             triggers={
                 "i": "[SIM_REBORN]",
+                "r": "[SIM_REBORN]",
+                "?": "[SHOW_SKILLS]",
                 "o": "[SHUTDOWN]",
-                "]": "[POLICY_LOCO]",
-                "[": "[POLICY_MIMIC]",
-                ";": "[POLICY_SWITCH],NEXT",
-                "'": "[POLICY_SWITCH],LAST",
+                **loco_mimic_keys(3),
             }
         ),
-        # JoystickCtrlCfg(
-        #     combination_init_buttons=[],
-        #     triggers={
-        #         "A": "[SHUTDOWN]",
-        #         "Back": "[POLICY_LOCO]",
-        #         "Start": "[POLICY_MIMIC]",
-        #         "RB": "[POLICY_SWITCH],NEXT",
-        #         "LB": "[POLICY_SWITCH],LAST",
-        #     },
-        # ),
     ]
 
     loco_policy: G1AsapLocoPolicyCfg = G1AsapLocoPolicyCfg()
@@ -196,8 +175,8 @@ class g1_locomimic_asap_real(g1_locomimic_asap):
 @cfg_registry.register
 class g1_locomimic_asap_full(G1RlLocoMimicPipelineCfg):
     """
-    Exact reproduce of the original ASAP code.
-    You need to download the model files from the official repo and put them in assets/models/g1/asap
+    Every ASAP skill, with the same number keys as the other projects.
+    `0` walks. `1` through `9` play the first nine skills. `;` and `'` reach the rest.
     """
 
     robot: str = "g1"
@@ -207,11 +186,9 @@ class g1_locomimic_asap_full(G1RlLocoMimicPipelineCfg):
         KeyboardCtrlCfg(
             triggers={
                 "i": "[SIM_REBORN]",
+                "r": "[SIM_REBORN]",
+                "?": "[SHOW_SKILLS]",
                 "o": "[SHUTDOWN]",
-                "]": "[POLICY_LOCO]",
-                "[": "[POLICY_MIMIC]",
-                ";": "[POLICY_SWITCH],NEXT",
-                "'": "[POLICY_SWITCH],LAST",
             }
         ),
     ]
@@ -228,13 +205,14 @@ class g1_locomimic_asap_full(G1RlLocoMimicPipelineCfg):
         import yaml
 
         asap_config = yaml.safe_load(open(Path(__file__).parent / "asap.yaml"))
+        skills: list[G1AsapPolicyCfg] = []
         for plicy_name, relative_path in asap_config["mimic_models"].items():
             start_upper_body_dof_pos = asap_config["start_upper_body_dof_pos"].get(plicy_name, None)
             # remove some joints that are not in the g1 23-dof model
             if start_upper_body_dof_pos is not None:
                 start_upper_body_dof_pos = [start_upper_body_dof_pos[i] for i in [0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 13]]
             motion_length_s = asap_config["motion_length_s"].get(plicy_name, 10.0)
-            self.mimic_policies.append(
+            skills.append(
                 G1AsapPolicyCfg(
                     policy_name=plicy_name,
                     relative_path=relative_path,
@@ -242,3 +220,5 @@ class g1_locomimic_asap_full(G1RlLocoMimicPipelineCfg):
                     motion_length_s=motion_length_s,
                 )
             )
+        self.mimic_policies = skills
+        self.ctrl[0].triggers = {**self.ctrl[0].triggers, **loco_mimic_keys(len(skills))}

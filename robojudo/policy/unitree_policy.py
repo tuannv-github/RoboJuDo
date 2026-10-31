@@ -3,7 +3,7 @@ import numpy as np
 from robojudo.environment.utils.mujoco_viz import MujocoVisualizer
 from robojudo.policy import Policy, policy_registry
 from robojudo.policy.policy_cfgs import UnitreePolicyCfg, UnitreeWoGaitPolicyCfg
-from robojudo.utils.util_func import command_remap, get_gravity_orientation
+from robojudo.utils.util_func import get_gravity_orientation
 
 
 @policy_registry.register
@@ -34,20 +34,7 @@ class UnitreePolicy(Policy):
         return phase
 
     def _get_commands(self, ctrl_data):
-        commands = np.zeros(3)
-        for key in ctrl_data.keys():
-            if key in ["JoystickCtrl", "UnitreeCtrl"]:
-                axes = ctrl_data[key]["axes"]
-                lx, ly, rx, ry = axes["LeftX"], axes["LeftY"], axes["RightX"], axes["RightY"]
-
-                commands[0] = command_remap(ly, self.commands_map[0])
-                commands[1] = command_remap(lx, self.commands_map[1])
-                commands[2] = command_remap(rx, self.commands_map[2])
-                break
-            if key in ["KeyboardCtrl"]:
-                commands = self._keyboard_command(ctrl_data[key]["keyboard_event"], self.commands_map)
-                break
-        return commands
+        return self._move_command(ctrl_data, self.commands_map)
 
     def get_observation(self, env_data, ctrl_data):
         phase = self._get_phase()

@@ -11,6 +11,7 @@ from robojudo.pipeline import Pipeline, pipeline_registry
 from robojudo.pipeline.pipeline_cfgs import RlLocoMimicPipelineCfg
 from robojudo.pipeline.rl_multi_policy_pipeline import PolicyManager, RlMultiPolicyPipeline
 from robojudo.pipeline.rl_pipeline import PolicyWrapper
+from robojudo.pipeline.skill_table import print_skill_table
 from robojudo.policy import PolicyCfg
 from robojudo.utils.progress import ProgressBar
 
@@ -207,6 +208,7 @@ class RlLocoMimicPipeline(RlMultiPolicyPipeline):
 
         self.self_check()
         self.reset()
+        print_skill_table(self.ctrl_manager, self.policy_manager.policies, mimic=True)
 
     def post_step_callback(self, env_data, ctrl_data, extras, pd_target):
         self.timestep += 1
@@ -228,8 +230,23 @@ class RlLocoMimicPipeline(RlMultiPolicyPipeline):
                     self.env.shutdown()
                 case "[SIM_REBORN]":
                     if hasattr(self.env, "reborn"):
-                        logger.warning("Simulation Env reborn!")
+                        logger.warning("Simulation reset")
+                        self.policy_locomotion_mimic_flag = 0
+                        self.policy_manager.interp_state = self.policy_manager.InterpState.IDLE
+                        self.policy_manager.interp_callback_start = None
+                        self.policy_manager.interp_callback_end = None
+                        if self.policy_manager.interp_pbar is not None:
+                            self.policy_manager.interp_pbar.close()
+                            self.policy_manager.interp_pbar = None
+                        self.policy_manager.warmup_policy_indices.clear()
+                        for policy in self.policy_manager.policies:
+                            policy.reset()
+                        self.policy_manager.set_policy(self.policy_manager.policy_loco_id)
                         self.env.reborn()  # pyright: ignore[reportAttributeAccessIssue]
+                        commands.append("[MOTION_RESET]")
+                        print_skill_table(self.ctrl_manager, self.policy_manager.policies, mimic=True)
+                case "[SHOW_SKILLS]":
+                    print_skill_table(self.ctrl_manager, self.policy_manager.policies, mimic=True)
                 case cmd if cmd.startswith("[POLICY_SWITCH]"):
                     switch_target = cmd.split(",")[1]
                     if switch_target == "NEXT":
@@ -237,11 +254,36 @@ class RlLocoMimicPipeline(RlMultiPolicyPipeline):
                     elif switch_target == "LAST":
                         self.policy_manager.toggle_mimic_policy(-1)
                 case "[POLICY_LOCO]":
+                    finished_skill = self.policy_locomotion_mimic_flag == 1
                     self.policy_locomotion_mimic_flag = 0
                     self.policy_manager.switch_to_loco()
-                case "[POLICY_MIMIC]":
+                    if finished_skill:
+                        print_skill_table(self.ctrl_manager, self.policy_manager.policies, mimic=True)
+                case cmd if cmd == "[POLICY_MIMIC]" or cmd.startswith("[POLICY_MIMIC],"):
+                    idx = self.policy_manager.policy_mimic_idx
+                    parts = cmd.split(",")
+                    if len(parts) == 2:
+                        if not parts[1].isdigit():
+                            logger.warning(f"Bad skill index: {cmd}")
+                            continue
+                        idx = int(parts[1])
+                    if not (0 <= idx < self.policy_manager.policy_mimic_num):
+                        logger.warning(f"Skill index {idx} out of range")
+                        continue
+                    self.policy_manager.policy_mimic_idx = idx
+                    mimic_id = self.policy_manager.policy_mimic_ids[idx]
+                    skill = self.policy_manager.policy_by_id(mimic_id)
+                    skill_name = skill.name
+                    logger.info(f"Play skill {idx}: {skill_name}")
+                    motion_id = getattr(skill.cfg_policy, "motion_id", None)
+                    if motion_id is not None:
+                        commands.append(f"[MOTION_SELECT],{motion_id}")
                     self.policy_locomotion_mimic_flag = 1
-                    self.policy_manager.switch_to_mimic()
+                    if self.policy_manager.current_policy_id != self.policy_manager.policy_loco_id:
+                        self.policy_manager.policy_by_id(mimic_id).reset()
+                        self.policy_manager.set_policy(mimic_id)
+                    else:
+                        self.policy_manager.switch_to_mimic()
 
         self.ctrl_manager.post_step_callback(ctrl_data)
 

@@ -1,4 +1,5 @@
 from robojudo.config import cfg_registry
+from robojudo.config.skill_keys import loco_mimic_keys, multi_policy_keys
 from robojudo.controller.ctrl_cfgs import (
     JoystickCtrlCfg,  # noqa: F401
     KeyboardCtrlCfg,  # noqa: F401
@@ -21,6 +22,7 @@ from .ctrl.g1_twist_redis_ctrl_cfg import G1TwistRedisCtrlCfg  # noqa: F401
 from .env.g1_dummy_env_cfg import G1DummyEnvCfg  # noqa: F401
 from .env.g1_mujuco_env_cfg import G1_12MujocoEnvCfg, G1_23MujocoEnvCfg, G1MujocoEnvCfg  # noqa: F401
 from .env.g1_real_env_cfg import G1RealEnvCfg, G1UnitreeCfg  # noqa: F401
+from .pipeline.g1_locomimic_pipeline_cfg import G1RlLocoMimicPipelineCfg  # noqa: F401
 from .policy.g1_amo_policy_cfg import G1AmoPolicyCfg  # noqa: F401
 from .policy.g1_asap_policy_cfg import G1AsapLocoPolicyCfg, G1AsapPolicyCfg  # noqa: F401
 from .policy.g1_beyondmimic_policy_cfg import G1BeyondMimicPolicyCfg  # noqa: F401
@@ -50,10 +52,22 @@ class g1(RlPipelineCfg):
     ]
 
     policy: G1UnitreePolicyCfg = G1UnitreePolicyCfg()
-    # policy: G1UnitreeWoGaitPolicyCfg = G1UnitreeWoGaitPolicyCfg()
-    # policy: G1AmoPolicyCfg = G1AmoPolicyCfg()
 
     # run_fullspeed: bool = env.is_sim
+
+
+@cfg_registry.register
+class g1_wogait(g1):
+    """Unitree G1, 29-DoF walk policy. Legs, arms, and wrists."""
+
+    policy: G1UnitreeWoGaitPolicyCfg = G1UnitreeWoGaitPolicyCfg()
+
+
+@cfg_registry.register
+class g1_amo(g1):
+    """Unitree G1, AMO walk policy. Legs and waist from the network, arms from the command."""
+
+    policy: G1AmoPolicyCfg = G1AmoPolicyCfg()
 
 
 @cfg_registry.register
@@ -89,11 +103,7 @@ class g1_switch(RlMultiPolicyPipelineCfg):
     env: G1MujocoEnvCfg = G1MujocoEnvCfg()
 
     ctrl: list[KeyboardCtrlCfg | JoystickCtrlCfg] = [
-        # KeyboardCtrlCfg(
-        #     triggers_extra={
-        #         "Key.tab": "[POLICY_TOGGLE]",
-        #     }
-        # ),
+        KeyboardCtrlCfg(triggers_extra=multi_policy_keys(2)),
         JoystickCtrlCfg(
             triggers_extra={
                 "RB+Down": "[POLICY_SWITCH],0",
@@ -120,12 +130,7 @@ class g1_locomimic(RlLocoMimicPipelineCfg):
     env: G1MujocoEnvCfg = G1MujocoEnvCfg()
 
     ctrl: list[KeyboardCtrlCfg | JoystickCtrlCfg] = [
-        KeyboardCtrlCfg(
-            triggers_extra={
-                "]": "[POLICY_LOCO]",
-                "[": "[POLICY_MIMIC]",
-            }
-        ),
+        KeyboardCtrlCfg(triggers_extra=loco_mimic_keys(1)),
         JoystickCtrlCfg(
             triggers_extra={
                 "RB+Down": "[POLICY_LOCO]",
@@ -213,7 +218,7 @@ class g1_asap(RlPipelineCfg):
 
     ctrl: list[JoystickCtrlCfg | KeyboardCtrlCfg] = [  # note: the ranking of controllers matters
         # JoystickCtrlCfg(),
-        KeyboardCtrlCfg(triggers={"i": "[SIM_REBORN]", "o": "[SHUTDOWN]", "r": "[MOTION_RESET]"}),
+        KeyboardCtrlCfg(triggers={"i": "[SIM_REBORN]", "o": "[SHUTDOWN]", "r": "[SIM_REBORN]", "?": "[SHOW_SKILLS]"}),
     ]
 
     policy: G1AsapPolicyCfg = G1AsapPolicyCfg()
@@ -248,6 +253,7 @@ class g1_asap_loco(RlPipelineCfg):
         KeyboardCtrlCfg(
             triggers={
                 "i": "[SIM_REBORN]",
+                "r": "[SIM_REBORN]", "?": "[SHOW_SKILLS]",
                 "o": "[SHUTDOWN]",
             }
         ),
@@ -256,25 +262,90 @@ class g1_asap_loco(RlPipelineCfg):
     policy: G1AsapLocoPolicyCfg = G1AsapLocoPolicyCfg()
 
 
+_KUNGFU_MOTIONS = [
+    "kungfubot/Horse-stance_pose",
+    "kungfubot/Horse-stance_punch",
+    "kungfubot/Hooks_punch",
+    "kungfubot/Roundhouse_kick",
+    "kungfubot/Side_kick",
+    "kungfubot/Bruce_Lee_pose",
+    "kungfubot/Charleston_dance",
+]
+
+
 @cfg_registry.register
-class g1_kungfubot2(RlPipelineCfg):
+class g1_kungfubot2(G1RlLocoMimicPipelineCfg):
     """
-    PBHC KungfuBot2 General Policy
+    Locomotion plus the KungfuBot actions.
+    `0` walks. `1` to `7` play the PBHC motion clips.
+    `8` horse squat. `9` horse-stance pose. `;` the second pose. `'` horse-stance punch.
     """
 
     robot: str = "g1"
-    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg(forward_kinematic=None, update_with_fk=False, born_place_align=True)
     ctrl: list[KeyboardCtrlCfg | G1MotionKungfuBotCtrlCfg] = [
-        KeyboardCtrlCfg(),
+        KeyboardCtrlCfg(
+            triggers={
+                "i": "[SIM_REBORN]",
+                "r": "[SIM_REBORN]", "?": "[SHOW_SKILLS]",
+                "o": "[SHUTDOWN]",
+                **{
+                    **loco_mimic_keys(len(_KUNGFU_MOTIONS) + 4),
+                    ";": "[POLICY_MIMIC],9",
+                    "'": "[POLICY_MIMIC],10",
+                },
+            }
+        ),
         G1MotionKungfuBotCtrlCfg(
-            motion_name="kungfubot/Horse-stance_pose",  # put motion files in assets/motions/g1/phc/kungfubot
+            motion_name="kungfubot/Horse-stance_pose",
+            motion_names=list(_KUNGFU_MOTIONS),
+            autoplay=False,
         ),
     ]
 
-    policy: G1KungfuBotGeneralPolicyCfg = G1KungfuBotGeneralPolicyCfg(
-        policy_name="horse_test_43000",  # this is a test model trained with only one motion
-        compatibility_old_version=True,  # for old version of kungfubot general policy (before 2025-11-13 bugfix #68)
-    )
+    loco_policy: G1AsapLocoPolicyCfg = G1AsapLocoPolicyCfg()
+    mimic_policies: list[G1KungfuBotGeneralPolicyCfg | G1KungfuBotPolicyCfg] = [
+        *[
+            G1KungfuBotGeneralPolicyCfg(
+                policy_name="horse_test_43000",  # one tracker, a different clip per key
+                compatibility_old_version=True,  # for old version of kungfubot general policy (before 2025-11-13 bugfix #68)
+                motion_id=motion_id,
+                skill_title=motion_name.split("/")[-1],
+            )
+            for motion_id, motion_name in enumerate(_KUNGFU_MOTIONS)
+        ],
+        G1KungfuBotPolicyCfg(),  # KungfuBot horse_squat
+        G1KungfuBotPolicyCfg(
+            policy_name="pbhc/horse_stance_pose",
+            relative_path="model_50000.onnx",
+            motion_length_s=7.0,  # Horse-stance_pose.pkl, 210 frames at 30 fps
+            start_upper_body_dof_pos=[
+                *[0.0001, 0.0, 0.0013],
+                *[0.1960, 0.1994, -0.0174, 0.9011],
+                *[0.1940, -0.1976, 0.0170, 0.9013],
+            ],
+        ),
+        G1KungfuBotPolicyCfg(
+            policy_name="pbhc/horse_stance_pose_2",
+            relative_path="model_119000.onnx",
+            motion_length_s=7.0,  # same Horse-stance_pose.pkl
+            start_upper_body_dof_pos=[
+                *[0.0001, 0.0, 0.0013],
+                *[0.1960, 0.1994, -0.0174, 0.9011],
+                *[0.1940, -0.1976, 0.0170, 0.9013],
+            ],
+        ),
+        G1KungfuBotPolicyCfg(
+            policy_name="pbhc/horse_stance_punch",
+            relative_path="model_33000.onnx",
+            motion_length_s=6.67,  # Horse-stance_punch.pkl, 200 frames at 30 fps
+            start_upper_body_dof_pos=[
+                *[-0.0005, 0.0007, 0.0029],
+                *[0.2057, 0.1964, 0.0050, 0.8902],
+                *[0.2077, -0.1970, -0.0024, 0.8882],
+            ],
+        ),
+    ]
 
 
 @cfg_registry.register
@@ -311,10 +382,7 @@ class g1_switch_beyondmimic(RlMultiPolicyPipelineCfg):
         KeyboardCtrlCfg(
             triggers_extra={
                 "Key.tab": "[POLICY_TOGGLE]",
-                "!": "[POLICY_SWITCH],0",  # note: with shift
-                "@": "[POLICY_SWITCH],1",  # note: with shift
-                "#": "[POLICY_SWITCH],2",  # note: with shift
-                "$": "[POLICY_SWITCH],3",  # note: with shift
+                **multi_policy_keys(4),
             }
         ),
         JoystickCtrlCfg(
