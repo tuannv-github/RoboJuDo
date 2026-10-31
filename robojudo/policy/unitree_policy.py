@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 
 from robojudo.environment.utils.mujoco_viz import MujocoVisualizer
@@ -21,16 +19,9 @@ class UnitreePolicy(Policy):
 
         self.reset()
 
-    def _reset_kb_cmd(self):
-        self._kb_held: set[str] = set()
-        self._kb_press_t: dict[str, float] = {}
-        self._kb_pulse_until: dict[str, float] = {}
-        self._kb_smooth = np.zeros(3, dtype=np.float32)
-        self._last_kb_cmd: tuple[float, ...] | None = None
-
     def reset(self):
         self.timestep: int = 0
-        self._reset_kb_cmd()
+        self._reset_keyboard()
 
         self._init_history(np.zeros(self.history_obs_size))
 
@@ -54,52 +45,7 @@ class UnitreePolicy(Policy):
                 commands[2] = command_remap(rx, self.commands_map[2])
                 break
             if key in ["KeyboardCtrl"]:
-                # A tap arrives as down+up in the same millisecond, so the key is
-                # already released before the next control step. Keep that command
-                # alive briefly, and refresh it while the key repeats.
-                now = time.monotonic()
-                for event in ctrl_data[key]["keyboard_event"]:
-                    name = event["name"]
-                    if event["type"] != "keyboard" or name not in ("w", "a", "s", "d", "q", "e"):
-                        continue
-                    if event["pressed"]:
-                        self._kb_press_t[name] = float(event["timestamp"])
-                        self._kb_held.add(name)
-                    elif float(event["timestamp"]) - self._kb_press_t.get(name, 0.0) < 0.05:
-                        self._kb_held.discard(name)
-                        self._kb_pulse_until[name] = now + 0.45
-                    else:
-                        self._kb_held.discard(name)
-                        self._kb_pulse_until.pop(name, None)
-                active = set(self._kb_held)
-                for name, until in list(self._kb_pulse_until.items()):
-                    if until >= now:
-                        active.add(name)
-                    else:
-                        self._kb_pulse_until.pop(name, None)
-                # Full stick is 1.0 (~0.8 m/s forward). Hold the key and the command climbs there.
-                stick = 1.0
-                target = np.zeros(3, dtype=np.float32)
-                if "w" in active:
-                    target[0] = command_remap(stick, self.commands_map[0])
-                elif "s" in active:
-                    target[0] = command_remap(-stick, self.commands_map[0])
-                if "a" in active:
-                    target[1] = command_remap(-stick, self.commands_map[1])
-                elif "d" in active:
-                    target[1] = command_remap(stick, self.commands_map[1])
-                if "q" in active:
-                    target[2] = command_remap(-stick, self.commands_map[2])
-                elif "e" in active:
-                    target[2] = command_remap(stick, self.commands_map[2])
-                # About 3 s from zero to full, and the same on the way back down.
-                step = np.float32(self.dt / 3.0)
-                self._kb_smooth += np.clip(target - self._kb_smooth, -step, step)
-                commands = self._kb_smooth.astype(np.float32, copy=True)
-                cmd = tuple(round(float(c), 1) for c in commands)
-                if cmd != self._last_kb_cmd:
-                    self._last_kb_cmd = cmd
-                    print(f"keyboard cmd {list(cmd)} held={sorted(active)}", flush=True)
+                commands = self._keyboard_command(ctrl_data[key]["keyboard_event"], self.commands_map)
                 break
         return commands
 
@@ -175,7 +121,7 @@ class UnitreeWoGaitPolicy(UnitreePolicy):
 
     def reset(self):
         self.timestep: int = 0
-        self._reset_kb_cmd()
+        self._reset_keyboard()
 
         history_obs_dims = self.cfg_policy.history_obs_dims
         default_history = [np.zeros(dim, dtype=np.float32) for dim in history_obs_dims.values()]

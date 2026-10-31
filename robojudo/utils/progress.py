@@ -11,8 +11,9 @@ class ProgressBar:
             unit="step",
             colour="magenta",
             ncols=100,
-            dynamic_ncols=True,
-            mininterval=0.01,
+            position=0,
+            dynamic_ncols=False,
+            mininterval=0.2,
             leave=False,
             ascii=True,
         )

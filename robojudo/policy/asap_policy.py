@@ -37,11 +37,19 @@ class AsapPolicy(Policy):
         self.motion_length_s = cfg_policy.motion_length_s
         self.use_history = cfg_policy.USE_HISTORY
 
+        self.pbar: ProgressBar | None = None
         self.reset()
+
+    def _close_pbar(self):
+        if self.pbar is not None:
+            self.pbar.close()
+            self.pbar = None
 
     def reset(self):
         self.timestep: float = 0
-        self.pbar = ProgressBar(f"ASAP {self.cfg_policy.policy_name}", self.motion_length_s)
+        # One bar for the clip that is playing. Creating one here would stack
+        # a bar for every loaded policy and scramble the terminal.
+        self._close_pbar()
         self.play_speed: float = 1.0
         self.flag_motion_done = False
 
@@ -52,11 +60,14 @@ class AsapPolicy(Policy):
             self._init_history(default_history)
 
     def post_step_callback(self, commands: list[str] | None = None):
+        if self.pbar is None:
+            self.pbar = ProgressBar(f"ASAP {self.cfg_policy.policy_name}", self.motion_length_s)
         self.pbar.set(self.timestep * self.dt)
         phase = self._get_frame_encoding()
         if phase >= 1.0:
             # self.reset()
             self.flag_motion_done = True
+            self._close_pbar()
         else:
             self.timestep += 1 * self.play_speed
 
@@ -198,6 +209,13 @@ class AsapLocoPolicy(Policy):
         self.base_height_command_default = np.array([cfg_policy.command_base_height_default], dtype=np.float32)
 
         self.gait_period = cfg_policy.GAIT_PERIOD
+        # Same key directions as Unitree. Endpoints are the joystick ranges: ±0.5 m/s, ±1 rad/s.
+        self._kb_commands_map = [
+            [-0.5, 0.0, 0.5],
+            [0.5, 0.0, -0.5],
+            [-1.0, 0.0, 1.0],
+        ]
+        self._kb_walk = False
         self.reset()
 
     def reset(self):
@@ -205,8 +223,10 @@ class AsapLocoPolicy(Policy):
         self.ref_upper_dof_pos = self.ref_upper_dof_pos_default.copy()
         self.lin_vel_command = np.array([0.0, 0.0])
         self.ang_vel_command = np.array([0.0])
-        self.stand_command = np.array([0])
+        self.stand_command = np.array([0.0])
         self.base_height_command = self.base_height_command_default.copy()
+        self._kb_walk = False
+        self._reset_keyboard()
 
         self.last_action = np.zeros(self.num_actions)
         if self.use_history:
@@ -316,6 +336,26 @@ class AsapLocoPolicy(Policy):
         # return full_actions
         return processed_actions
 
+    def _on_keyboard(self, name: str):
+        match name:
+            case "z":
+                self._kb_smooth[:] = 0.0
+                self._kb_walk = False
+            case "1":
+                self.base_height_command[0] += 0.05
+            case "2":
+                self.base_height_command[0] -= 0.05
+            case "=":
+                self._kb_walk = not self._kb_walk
+
+    def _apply_keyboard(self, events):
+        command = self._keyboard_command(events, self._kb_commands_map, on_press=self._on_keyboard)
+        self.lin_vel_command[0] = float(command[0])
+        self.lin_vel_command[1] = float(command[1])
+        self.ang_vel_command[0] = float(command[2])
+        moving = float(np.linalg.norm(self._kb_smooth)) > 0.02 or self._kb_walk
+        self.stand_command[0] = 1.0 if moving else 0.0
+
     def _update_commands(self, ctrl_data):
         if (ref_dof_pos := ctrl_data.get("ref_dof_pos", None)) is not None:
             self.ref_upper_dof_pos = ref_dof_pos.copy()[-self.num_upper_dofs :]
@@ -344,35 +384,8 @@ class AsapLocoPolicy(Policy):
                                 self.base_height_command[0] -= 0.05
                 break
             elif key == "KeyboardCtrl":
-                for event in ctrl_data[key]["keyboard_event"]:
-                    if event["type"] == "keyboard" and event["pressed"]:
-                        match event["name"]:
-                            case "w":
-                                self.lin_vel_command[0] += 0.1 if self.stand_command else 0.0
-                            case "s":
-                                self.lin_vel_command[0] -= 0.1 if self.stand_command else 0.0
-                            case "a":
-                                self.lin_vel_command[1] += 0.1 if self.stand_command else 0.0
-                            case "d":
-                                self.lin_vel_command[1] -= 0.1 if self.stand_command else 0.0
-                            case "q":
-                                self.ang_vel_command[0] -= 0.1
-                            case "e":
-                                self.ang_vel_command[0] += 0.1
-                            case "z":
-                                self.ang_vel_command[0] = 0.0
-                                self.lin_vel_command[0] = 0.0
-                                self.lin_vel_command[1] = 0.0
-                            case "1":
-                                self.base_height_command += 0.05
-                            case "2":
-                                self.base_height_command -= 0.05
-                            case "=":
-                                self.stand_command = 1 - self.stand_command
-                                if self.stand_command == 0:
-                                    self.ang_vel_command[0] = 0.0
-                                    self.lin_vel_command[0] = 0.0
-                                    self.lin_vel_command[1] = 0.0
+                self._apply_keyboard(ctrl_data[key]["keyboard_event"])
+                break
 
     def debug_viz(self, visualizer: MujocoVisualizer, env_data, ctrl_data, extras):
         base_pos = env_data["base_pos"]

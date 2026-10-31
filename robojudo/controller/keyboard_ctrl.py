@@ -1,6 +1,8 @@
 import time
 from queue import Empty, Queue
 
+from tqdm import tqdm
+
 from robojudo.controller import Controller, ctrl_registry
 from robojudo.controller.ctrl_cfgs import KeyboardCtrlCfg
 from robojudo.controller.utils.keyboard import KeyboardThread
@@ -40,7 +42,7 @@ class KeyboardCtrl(Controller):
         events = self.get_events()
         for event in events:
             state = "down" if event["pressed"] else "up"
-            print(f"keyboard {event['name']} {state}", flush=True)
+            tqdm.write(f"keyboard {event['name']} {state}")
         return {"keyboard_event": events}
 
     def process_triggers(self, ctrl_data):

@@ -1,11 +1,15 @@
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Callable
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from robojudo.tools.tool_cfgs import DoFConfig
+from robojudo.utils.util_func import command_remap
 
 from .policy_cfgs import PolicyCfg
 
@@ -46,6 +50,80 @@ class Policy(ABC):
 
         self.history_length = self.cfg_policy.history_length
         self.history_obs_size = self.cfg_policy.history_obs_size
+        self._reset_keyboard()
+
+    def _reset_keyboard(self):
+        self._kb_held: set[str] = set()
+        self._kb_press_t: dict[str, float] = {}
+        self._kb_pulse_until: dict[str, float] = {}
+        # Signed stick in [-1, 1]: forward (w/s), lateral (a -, d +), yaw (q -, e +).
+        self._kb_smooth = np.zeros(3, dtype=np.float32)
+        self._last_kb_cmd: tuple[float, ...] | None = None
+
+    def _keyboard_command(
+        self,
+        events,
+        commands_map,
+        on_press: Callable[[str], None] | None = None,
+    ) -> np.ndarray:
+        """Hold-to-move command from KeyboardCtrl events.
+
+        A tap arrives as down+up in the same millisecond, so the key is already
+        released before the next control step. That press stays active briefly.
+        The stick ramps to full in about 3 seconds, then ``commands_map`` scales
+        each axis. ``on_press`` receives other keys on the press edge.
+        """
+        now = time.monotonic()
+        move_keys = ("w", "a", "s", "d", "q", "e")
+        for event in events:
+            name = event["name"]
+            if event.get("type") != "keyboard":
+                continue
+            if name in move_keys:
+                if event["pressed"]:
+                    self._kb_press_t[name] = float(event["timestamp"])
+                    self._kb_held.add(name)
+                elif float(event["timestamp"]) - self._kb_press_t.get(name, 0.0) < 0.05:
+                    self._kb_held.discard(name)
+                    self._kb_pulse_until[name] = now + 0.45
+                else:
+                    self._kb_held.discard(name)
+                    self._kb_pulse_until.pop(name, None)
+            elif event["pressed"] and on_press is not None:
+                on_press(name)
+
+        active = set(self._kb_held)
+        for name, until in list(self._kb_pulse_until.items()):
+            if until >= now:
+                active.add(name)
+            else:
+                self._kb_pulse_until.pop(name, None)
+
+        stick = np.zeros(3, dtype=np.float32)
+        if "w" in active:
+            stick[0] = 1.0
+        elif "s" in active:
+            stick[0] = -1.0
+        if "a" in active:
+            stick[1] = -1.0
+        elif "d" in active:
+            stick[1] = 1.0
+        if "q" in active:
+            stick[2] = -1.0
+        elif "e" in active:
+            stick[2] = 1.0
+
+        step = np.float32(self.dt / 3.0)
+        self._kb_smooth += np.clip(stick - self._kb_smooth, -step, step)
+        command = np.array(
+            [float(command_remap(float(self._kb_smooth[i]), commands_map[i])) for i in range(3)],
+            dtype=np.float32,
+        )
+        rounded = tuple(round(float(c), 1) for c in command)
+        if rounded != self._last_kb_cmd:
+            self._last_kb_cmd = rounded
+            tqdm.write(f"keyboard cmd {list(rounded)} held={sorted(active)}")
+        return command
 
     def _init_history(self, default_history: np.ndarray | torch.Tensor | list):
         logger.debug(f"Initializing history buffer as {self.history_length} x {len(default_history)}")
