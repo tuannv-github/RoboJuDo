@@ -142,11 +142,11 @@ class MotionCtrl(Controller):
         # logger.debug(f"{self.motion_id=}, {self.motion_timestep=}")
 
         if motion_ids is None:
-            motion_ids = to_torch([0], dtype=torch.int32)
+            motion_ids = to_torch([0], dtype=torch.int32, device=self.device)
         if motion_times is None:
-            motion_times = to_torch([self.motion_time], dtype=torch.float32)
+            motion_times = to_torch([self.motion_time], dtype=torch.float32, device=self.device)
         if offset is None:
-            offset = to_torch(self.motion_offset[np.newaxis, :], dtype=torch.float32)
+            offset = to_torch(self.motion_offset[np.newaxis, :], dtype=torch.float32, device=self.device)
 
         ## Cache the motion + offset
         if (
@@ -223,7 +223,9 @@ class MotionCtrl(Controller):
     def reset(self):
         self.motion_time = 0
 
-        motion_init_pos = self._motion_lib.get_root_pos_smpl([0], to_torch([0]))["root_pos"][0].cpu().numpy()
+        motion_init_pos = self._motion_lib.get_root_pos_smpl([0], to_torch([0], device=self.device))["root_pos"][
+            0
+        ].cpu().numpy()
         motion_init_pos[2] = 0.0
         self.motion_offset = -motion_init_pos
         # logger.debug(f"{self.motion_offset=}")
