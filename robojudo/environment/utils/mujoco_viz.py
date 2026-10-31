@@ -9,6 +9,11 @@ class MujocoVisualizer:
 
     # TODO: reset: clear all markers
 
+    def _add_marker(self, **marker_params):
+        # `id` is not a MuJoCo geom field. The viewer patch used it as a marker key.
+        marker_params.pop("id", None)
+        self.viewer.add_marker(**marker_params)
+
     def update_rg_view(self, body_pos, body_rot, humanoid_id):
         if humanoid_id == 0:
             rgba = (1, 0, 0, 1)
@@ -18,14 +23,12 @@ class MujocoVisualizer:
             return
 
         for j in range(body_pos.shape[0]):
-            # need to modify mujoco_viewer to support this
-            self.viewer.add_marker(
+            self._add_marker(
                 pos=body_pos[j],
-                size=0.05,
-                rgba=rgba,
+                size=np.ones(3) * 0.05,
+                rgba=np.array(rgba),
                 type=mujoco.mjtGeom.mjGEOM_SPHERE,  # pyright: ignore[reportAttributeAccessIssue]
                 label="",
-                id=humanoid_id * 1000 + j,
             )
 
     def draw_arrow(self, origin, root_quat, vec_local, color, scale=1.0, horizontal_only=False, id=0):
@@ -54,11 +57,11 @@ class MujocoVisualizer:
             mat = np.eye(3)
             center_pos = origin
 
-        self.viewer.add_marker(
+        self._add_marker(
             pos=center_pos,
             mat=mat,
             size=np.array([0.02, 0.02, scaled_length]),
             rgba=np.array(color),
             type=mujoco.mjtGeom.mjGEOM_ARROW,  # pyright: ignore[reportAttributeAccessIssue]
-            id=3000 + id,
+            id=id,
         )

@@ -12,7 +12,7 @@ from robojudo.tools.debug_log import DebugCfg
 class PipelineCfg(Config):
     pipeline_type: str  # name of the pipeline class
     # ===== Pipeline Config =====
-    device: str = "cpu"
+    device: str = "cuda"
 
     debug: DebugCfg = DebugCfg()
 

@@ -1,6 +1,7 @@
 import logging
 import time
 
+import glfw
 import mujoco
 import mujoco_viewer
 import numpy as np
@@ -37,8 +38,10 @@ class MujocoEnv(Environment):
             width=1200,
             height=900,
             hide_menus=True,
-            diable_key_callbacks=True,
         )
+        # The stock viewer binds keys that pause render() and overlap pipeline commands.
+        # pyGLFW treats None as 0, then poll_events tries to call that int.
+        glfw.set_key_callback(self.viewer.window, lambda *_args: None)
         self.viewer.cam.distance = 3.0
         self.viewer.cam.elevation = -10.0
         self.viewer.cam.azimuth = 180.0

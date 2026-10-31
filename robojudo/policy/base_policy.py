@@ -68,7 +68,8 @@ class Policy(ABC):
 
     def get_action(self, obs: np.ndarray) -> np.ndarray:
         obs_tensor = torch.from_numpy(obs).unsqueeze(0).float().to(self.device)
-        with torch.no_grad():
+        with torch.no_grad(), torch.backends.cudnn.flags(enabled=False):
+            # Scripted LSTMs segfault in cuDNN when their weights are not one contiguous chunk.
             actions_tensor = self.model(obs_tensor).cpu()
 
         actions = actions_tensor.numpy().squeeze()

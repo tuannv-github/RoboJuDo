@@ -37,7 +37,11 @@ class KeyboardCtrl(Controller):
         return events
 
     def get_data(self):
-        return {"keyboard_event": self.get_events()}
+        events = self.get_events()
+        for event in events:
+            state = "down" if event["pressed"] else "up"
+            print(f"keyboard {event['name']} {state}", flush=True)
+        return {"keyboard_event": events}
 
     def process_triggers(self, ctrl_data):
         commands = []

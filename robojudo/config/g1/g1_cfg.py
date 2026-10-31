@@ -45,8 +45,8 @@ class g1(RlPipelineCfg):
     # env: G1_12MujocoEnvCfg = G1_12MujocoEnvCfg()
 
     ctrl: list[JoystickCtrlCfg | KeyboardCtrlCfg] = [  # note: the ranking of controllers matters
-        JoystickCtrlCfg(),
-        # KeyboardCtrlCfg(),
+        # JoystickCtrlCfg(),
+        KeyboardCtrlCfg(),
     ]
 
     policy: G1UnitreePolicyCfg = G1UnitreePolicyCfg()
